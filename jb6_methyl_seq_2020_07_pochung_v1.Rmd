@@ -1,0 +1,271 @@
+---
+title: "JB6 Methy-seq"
+author: Davit; Komal
+date: 2/4/2022
+version: 1.0
+output:
+  html_notebook:
+    highlight: tango
+    toc: true
+    toc_float: true
+    toc_depth: 6
+    number_sections: yes
+    code_folding: hide
+---
+
+Data location: [](https://rutgers.app.box.com/folder/118765606470?s=m5p30wnhsc1rl3mooezuj4odu9yu2jkh)
+
+```{r}
+# if (!requireNamespace("BiocManager",
+#                       quietly = TRUE))
+#   install.packages("BiocManager")
+# 
+# BiocManager::install("ChIPseeker")
+# BiocManager::install("GO.db")
+# BiocManager::install("DO.db")
+# BiocManager::install("org.Hs.eg.db")
+# BiocManager::install("TxDb.Hsapiens.UCSC.hg38.knownGene")
+# BiocManager::install("DSS")
+```
+
+# Setup
+```{r setup}
+require(data.table)
+require(ggplot2)
+require(ChIPseeker)
+require(TxDb.Hsapiens.UCSC.hg38.knownGene)
+require(org.Hs.eg.db)
+
+# require(DSS)
+# require(bsseq)
+```
+
+```{r}
+TxDb.Hsapiens.UCSC.hg38.knownGene
+```
+
+```{r}
+org.Hs.eg.db
+
+columns(org.Hs.eg.db)
+```
+
+# Load data
+```{r load data}
+dt1 <- fread("data/combined_def.tsv")
+# meta <- fread("data/meta_lung_cells.csv")
+```
+
+```{r}
+colnames(dt1)
+```
+
+```{r}
+?annotatePeak
+```
+
+
+## Annotate DNA samples
+```{r anoo}
+peakAnno1 <- annotatePeak(peak = "data/combined_def.tsv", 
+                          tssRegion = c(-3000, 3000), # default - CHECK!
+                          TxDb = TxDb.Hsapiens.UCSC.hg38.knownGene,
+                          annoDb = "org.Hs.eg.db") # provides the following extra columns:
+                                                   # ENSEMBL, SYMBOL, GENENAME
+```
+
+## Save annotated data
+```{r save_anno}
+peakAnno1@annoStat
+dt2 <- data.table(as.data.frame(peakAnno1@anno@elementMetadata@listData))
+setkey(dt2)
+dt2 <- dt2[dt2$SYMBOL != "NA", ]
+head(dt2)
+
+length(unique(dt2$SYMBOL))
+unique(substr(x = dt2$annotation, 
+              start = 1, 
+              stop = 4))
+```
+
+## Remove metochondrial DNA
+```{r}
+unique(dt2$geneChr)
+dt2 <- dt2[geneChr != "chrM", ]
+```
+
+# CONTINUE HERE (2/4/2022)!
+
+
+```{r}
+tmp <- dt2[, meta$sample_name, with = FALSE]
+rs <- rowSums(tmp)
+summary(rs)
+
+row_keep <- which(!is.na(rs))
+dt3 <- dt3[row_keep, ]
+```
+
+# Promoter CpGs only
+```{r}
+dt3[, reg := substring(text = annotation,
+                       first = 1,
+                       last = 4)]
+proms <- dt3[reg == "Prom",]
+```
+
+```{r}
+out <- list()
+for (i in 13:18) {
+  tmp <- proms[, c(11, i), with = FALSE]
+  colnames(tmp)[2] <- "X"
+  out[[i - 12]] <- tmp[, .(mu = mean(X)),
+                       by = SYMBOL]
+  colnames(out[[i - 12]])[2] <- paste0("X", i)
+}
+```
+
+```{r}
+res <- Reduce(function(...) merge(..., all = TRUE, by = "SYMBOL"), out)
+```
+
+```{r}
+res[, Control := 100*X14/X13]
+res[, LPS := 100*X16/X15]
+res[, SAHA := 100*X18/X17]
+res[, LPS_Control := LPS - Control]
+res[, LPS_SAHA := LPS - SAHA]
+res[, mu_LPS_Control := (LPS + Control)/2]
+res[, mu_LPS_SAHA := (LPS + SAHA)/2]
+```
+
+# Control vs. LPS
+```{r}
+plot(res$LPS_Control ~ res$mu_LPS_Control,
+     pch = ".")
+```
+
+## Average SD
+```{r}
+sd_LPS_Control <- sd(res$LPS_Control) 
+sd_LPS_Control
+```
+
+## Predict SD based on mean methylation
+```{r}
+setorder(res,
+         mu_LPS_Control)
+
+# Move 1 unit (%) at the time
+dt_ma <- data.table(mu_LPS_Control = 0:100)
+dt_ma$mov_avg <- NA
+
+# Window width = 10
+for (i in 1:nrow(dt_ma)) {
+  dt_ma$mov_avg[i] <- sd(res$LPS_Control[res$mu_LPS_Control >= dt_ma$mu_LPS_Control[i] &
+                                res$mu_LPS_Control < dt_ma$mu_LPS_Control[i] + 10])
+}
+
+plot(dt_ma$mov_avg)
+
+m1 <- loess(mov_avg ~ mu_LPS_Control,
+            data = dt_ma,
+            span = 0.2)
+plot(predict(m1),
+     type = "l")
+
+res$pred_sd_LPS_Control <- predict(m1,
+                       newdata = data.table(mu_LPS_Control = res$mu_LPS_Control))
+```
+
+# Statistics
+```{r}
+res[, stats_LPS_Control := LPS_Control/pred_sd_LPS_Control]
+hist(res$stats_LPS_Control, 100)
+
+plot(dnorm(res$stats_LPS_Control) ~ res$stats_LPS_Control,
+     pch = ".")
+
+m2 <- density(res$stats_LPS_Control,
+              kernel = "gaussian",
+              na.rm = TRUE)
+
+m2
+plot(m2,
+     type = "p",
+     pch = ".")
+
+mean(m2$x)
+sd(m2$x)
+```
+
+
+# LPS vs. SAHA
+```{r}
+plot(res$LPS_SAHA ~ res$mu_LPS_SAHA,
+     pch = ".")
+```
+
+```{r}
+dina <- meta$sample_name[meta$pi == "Dina"]
+dna_dina <- dt2[, c("SYMBOL",
+                    "distanceToTSS",
+                    "annotation",
+                    dina),
+                with = FALSE]
+head(dna_dina)
+```
+
+## Remove CpG clusters with small number of hits
+### Set NAs to 0
+```{r}
+dna_dina <- data.table(dna_dina[, 1:3],
+                       apply(X = dna_dina[, 4:ncol(dna_dina)],
+                             MARGIN = 2,
+                             FUN = function(a) {
+                               a[is.na(a)] <- 0
+                               return(a)
+                             }))
+```
+
+### Total hits (X-es) per row
+```{r}
+dna_dina$row_hits <- apply(X = dna_dina[, seq(from = 5,
+                                              to = ncol(dna_dina),
+                                              by = 2),
+                                        with = FALSE],
+                           MARGIN = 1,
+                           FUN = function(a) {
+                             sum(a)
+                           })
+
+hist(row_hits, 100)
+quantile(row_hits, c(0.5, 0.1))
+ecdf(row_hits)(10)
+```
+
+### NOTE: almost 10% of rows have total hits (X) < 10. Remove the rows.
+```{r}
+dt1 <- dna_dina[row_hits >= 10,]
+
+setorder(dt1,
+         SYMBOL,
+         distanceToTSS,
+         annotation)
+head(dt1)
+rm(ls = list("beas_2b_methylseq_anno",
+        "dt2",
+        "dna_dina",
+      ""))
+rm(beas_2b_methylseq_anno)
+rm(peakAnno1)
+rm(dna_dina)
+rm(dt2)
+gc()
+```
+
+
+```{r}
+
+```
+
