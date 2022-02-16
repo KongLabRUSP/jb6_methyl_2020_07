@@ -1,5 +1,5 @@
 ---
-title: "JB6 Methy-seq"
+title: "JB6 Mouse Cells Methy-seq"
 author: Davit; Komal
 date: 2/4/2022
 version: 1.0
@@ -23,63 +23,381 @@ Data location: [](https://rutgers.app.box.com/folder/118765606470?s=m5p30wnhsc1r
 # BiocManager::install("ChIPseeker")
 # BiocManager::install("GO.db")
 # BiocManager::install("DO.db")
+
+# BiocManager::install("org.Mm.eg.db")
+# BiocManager::install("TxDb.Mmusculus.UCSC.mm10.knownGene")
+
 # BiocManager::install("org.Hs.eg.db")
 # BiocManager::install("TxDb.Hsapiens.UCSC.hg38.knownGene")
+
 # BiocManager::install("DSS")
 ```
-
+# Resources
+1. [ChiPseeker package](http://bioconductor.org/packages/devel/bioc/vignettes/ChIPseeker/inst/doc/ChIPseeker.html)  
+  
+2. [DSS package](https://bioconductor.org/packages/release/bioc/vignettes/DSS/inst/doc/DSS.html)  
+  
+3. [Differential methylation analysis for bisulfite sequencing using DSS](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8171293/)  
+  
+# Introduction
+ChiP-seq is a method to analyze protein interaction with DNA and combines chromatin immunoprecipitation (CHIP) with massively parallel DNA sequencing to identify binding sites
+  
 # Setup
 ```{r setup}
 require(data.table)
 require(ggplot2)
 require(ChIPseeker)
-require(TxDb.Hsapiens.UCSC.hg38.knownGene)
-require(org.Hs.eg.db)
+require(TxDb.Mmusculus.UCSC.mm10.knownGene)
+require(org.Mm.eg.db)
 
-# require(DSS)
-# require(bsseq)
-```
-
-```{r}
-TxDb.Hsapiens.UCSC.hg38.knownGene
-```
-
-```{r}
-org.Hs.eg.db
-
-columns(org.Hs.eg.db)
+require(DSS)
+require(bsseq)
 ```
 
 # Load data
-```{r load data}
+```{r}
 dt1 <- fread("data/combined_def.tsv")
-# meta <- fread("data/meta_lung_cells.csv")
+colnames(dt1)
 ```
 
 ```{r}
-colnames(dt1)
+setorder(dt1,
+         start)
+dt1$ndx <- 1:nrow(dt1)
+```
+
+```{r}
+write.table(dt1[, c("chr",
+                    "start",
+                    "end",
+                    "CpG",
+                    "ndx")],
+            file = "Data/dt1.tsv",
+            sep = "\t",
+            row.names = FALSE)
+```
+
+
+# Annotate DNA samples
+```{r}
+peakAnno1 <- annotatePeak(peak = "data/dt1.tsv", #"data/combined_def.tsv", 
+                          tssRegion = c(-3000, 3000), # default - CHECK!
+                          TxDb = TxDb.Mmusculus.UCSC.mm10.knownGene,
+                          annoDb = "org.Mm.eg.db") # provides the following extra columns:
+                                                   # ENSEMBL, SYMBOL, GENENAME
+```
+
+## Save annotated data
+```{r}
+peakAnno1@annoStat
+dt2 <- data.table(as.data.frame(peakAnno1@anno@elementMetadata@listData))
+setkey(dt2)
+# dt2 <- dt2[dt2$SYMBOL != "NA", ]
+head(dt2)
+
+length(unique(dt2$SYMBOL))
+unique(substr(x = dt2$annotation, 
+              start = 1, 
+              stop = 4))
+names(dt2)[2] <- "pos"
+```
+
+# Package DSS
+Dispersion shrinkage for sequencing data 
+
+## Prepare DSS data list
+```{r}
+l_dt_dss <- list(data.table(chr = dt1$chr,
+                            # pos = dt1$start,
+                            pos = dt1$ndx,
+                            N = dt1$`SL01_R1_001_val_1_bismark_bt2_pe-N`,
+                            X = dt1$`SL01_R1_001_val_1_bismark_bt2_pe-X`),
+                 data.table(chr = dt1$chr,
+                            # pos = dt1$start,
+                            pos = dt1$ndx,
+                            N = dt1$`SL02_R1_001_val_1_bismark_bt2_pe-N`,
+                            X = dt1$`SL02_R1_001_val_1_bismark_bt2_pe-X`),
+                 data.table(chr = dt1$chr,
+                            # pos = dt1$start,
+                            pos = dt1$ndx,
+                            N = dt1$`SL03_R1_001_val_1_bismark_bt2_pe-N`,
+                            X = dt1$`SL03_R1_001_val_1_bismark_bt2_pe-X`),
+                 data.table(chr = dt1$chr,
+                            # pos = dt1$start,
+                            pos = dt1$ndx,
+                            N = dt1$`SL04_R1_001_val_1_bismark_bt2_pe-N`,
+                            X = dt1$`SL04_R1_001_val_1_bismark_bt2_pe-X`),
+                 data.table(chr = dt1$chr,
+                            # pos = dt1$start,
+                            pos = dt1$ndx,
+                            N = dt1$`SL05_R1_001_val_1_bismark_bt2_pe-N`,
+                            X = dt1$`SL05_R1_001_val_1_bismark_bt2_pe-X`),
+                 data.table(chr = dt1$chr,
+                            # pos = dt1$start,
+                            pos = dt1$ndx,
+                            N = dt1$`SL06_R1_001_val_1_bismark_bt2_pe-N`,
+                            X = dt1$`SL06_R1_001_val_1_bismark_bt2_pe-X`),
+                 data.table(chr = dt1$chr,
+                            # pos = dt1$start,
+                            pos = dt1$ndx,
+                            N = dt1$`SL07_R1_001_val_1_bismark_bt2_pe-N`,
+                            X = dt1$`SL07_R1_001_val_1_bismark_bt2_pe-X`),
+                 data.table(chr = dt1$chr,
+                            # pos = dt1$start,
+                            pos = dt1$ndx,
+                            N = dt1$`SL08_R1_001_val_1_bismark_bt2_pe-N`,
+                            X = dt1$`SL08_R1_001_val_1_bismark_bt2_pe-X`))
+```
+
+## Make DSS object
+```{r}
+obj_dss <- makeBSseqData(dat = l_dt_dss,
+                         sampleNames = c("WT_Control_1",
+                                         "WT_Control_2",
+                                         "WT_4HNE_1",
+                                         "WT_4HNE_2",
+                                         "KO_Control_1",
+                                         "KO_Control_2",
+                                         "KO_4HNE_1",
+                                         "KO_4HNE_2"))
+```
+
+## Pairwise tests
+```{r}
+system.time(ctl <- DMLtest(BSobj = obj_dss,
+                           group1 = c("WT_Control_1",
+                                      "WT_Control_2"),
+                           group2 = c("KO_Control_1",
+                                      "KO_Control_2"),
+                           equal.disp = FALSE))
+save(ctl,
+     file = "tmp/ctl.RData")
+gc()
+
+system.time(wt <- DMLtest(BSobj = obj_dss,
+              group1 = c("WT_Control_1",
+                         "WT_Control_2"),
+              group2 = c("WT_4HNE_1",
+                         "WT_4HNE_2"),
+              equal.disp = FALSE))
+save(wt,
+     file = "tmp/wt.RData")
+gc()
+
+system.time(ko <- DMLtest(BSobj = obj_dss,
+              group1 = c("KO_Control_1",
+                         "KO_Control_2"),
+              group2 = c("KO_4HNE_1",
+                         "KO_4HNE_2"),
+              equal.disp = FALSE))
+save(ko,
+     file = "tmp/ko.RData")
+gc()
+```
+
+## Controls: WT vs. KO
+### Reload test results
+```{r}
+load("tmp/ctl.RData")
+```
+
+### Merge with annotation and save
+```{r}
+ctl_anno <- merge(dt2,
+                  ctl,
+                  by = "pos")
+
+tmp <- dt1[, c("ndx",
+               "chr",
+               "start",
+               "end")]
+names(tmp)[1] <- "pos"
+ctl_anno <- merge(tmp,
+                  ctl_anno,
+                  by = "pos")
+
+setorder(ctl_anno,
+         fdr)
+write.table(ctl_anno,
+            file = "docs/controls.tsv",
+            row.names = FALSE,
+            sep = "\t")
+```
+
+## WT: 4HNE vs Control
+### Reload test results
+```{r}
+load("tmp/wt.RData")
+```
+
+### Merge with annotation and save
+```{r}
+wt_anno <- merge(dt2,
+                  wt,
+                  by = "pos")
+
+tmp <- dt1[, c("ndx",
+               "chr",
+               "start",
+               "end")]
+names(tmp)[1] <- "pos"
+wt_anno <- merge(tmp,
+                  wt_anno,
+                  by = "pos")
+
+setorder(wt_anno,
+         fdr)
+write.table(wt_anno,
+            file = "docs/wt.tsv",
+            row.names = FALSE,
+            sep = "\t")
+```
+
+## KO: 4HNE vs Control
+### Reload test results
+```{r}
+load("tmp/ko.RData")
+```
+
+### Merge with annotation and save
+```{r}
+ko_anno <- merge(dt2,
+                  ko,
+                  by = "pos")
+
+tmp <- dt1[, c("ndx",
+               "chr",
+               "start",
+               "end")]
+names(tmp)[1] <- "pos"
+ko_anno <- merge(tmp,
+                  ko_anno,
+                  by = "pos")
+
+setorder(ko_anno,
+         fdr)
+write.table(ko_anno,
+            file = "docs/ko.tsv",
+            row.names = FALSE,
+            sep = "\t")
+```
+
+## Visualization of DMRs
+```{r}
+tmp_l <- list(data.table(chr = dt1$chr,
+                         # pos = dt1$start,
+                         pos = dt1$ndx,
+                         N = dt1$`SL01_R1_001_val_1_bismark_bt2_pe-N`,
+                         X = dt1$`SL01_R1_001_val_1_bismark_bt2_pe-X`),
+              data.table(chr = dt1$chr,
+                         # pos = dt1$start,
+                         pos = dt1$ndx,
+                         N = dt1$`SL02_R1_001_val_1_bismark_bt2_pe-N`,
+                         X = dt1$`SL02_R1_001_val_1_bismark_bt2_pe-X`),
+              data.table(chr = dt1$chr,
+                         # pos = dt1$start,
+                         pos = dt1$ndx,
+                         N = dt1$`SL03_R1_001_val_1_bismark_bt2_pe-N`,
+                         X = dt1$`SL03_R1_001_val_1_bismark_bt2_pe-X`),
+              data.table(chr = dt1$chr,
+                         # pos = dt1$start,
+                         pos = dt1$ndx,
+                         N = dt1$`SL04_R1_001_val_1_bismark_bt2_pe-N`,
+                         X = dt1$`SL04_R1_001_val_1_bismark_bt2_pe-X`))
+
+tmp_obj <- makeBSseqData(dat = tmp_l,
+                         sampleNames = c("WT_Control_1",
+                                         "WT_Control_2",
+                                         "WT_4HNE_1",
+                                         "WT_4HNE_2"))
+
+tmp <- callDML(DMLresult = ctl,
+               delta = 0.1,
+               p.threshold = 0.05)
+head(tmp)
+showOneDMR(OneDMR = tmp[1, ],
+           BSobj = tmp_obj)
+```
+
+
+## ANOVA
+### Study desing
+```{r}
+design <- data.table(Treatment = rep(c("WT - Control",
+                                       "WT + 4HNE",
+                                       "KO - Control",
+                                       "KO + 4HNE"),
+                                     each = 2))
+design$Treatment <- factor(design$Treatment,
+                           levels = unique(design$Treatment))
+```
+
+```{r}
+DMLfit1 <- DMLfit.multiFactor(BSobj = dtBS,
+                             design = design,
+                             formula = ~ Treatment)
+summary(DMLfit1)
+```
+
+```{r}
+DMLfit1$X
+head(DMLfit1$fit$beta)
+colnames(DMLfit1$X)
+```
+
+```{r}
+comp1 <- DMLtest.multiFactor(DMLfit1, 
+                             coef = "TreatmentWT + 4HNE")
+head(comp1)
+
+comp2 <- DMLtest.multiFactor(DMLfit1, 
+                             coef = "TreatmentKO - Control")
+head(comp2)
+
+comp3 <- DMLtest.multiFactor(DMLfit1, 
+                             coef = "TreatmentKO + 4HNE")
+head(comp3)
+```
+
+
+```{r}
+# TxDb.Mmusculus.UCSC.mm10.knownGene
+```
+
+```{r}
+# org.Mm.eg.db
+# columns(org.Mm.eg.db)
+```
+
+```{r}
+# dt1$chr <- factor(dt1$chr,
+#                   levels = c(paste0("chr",
+#                                     1:19),
+#                              "chrX",
+#                              "chrY",
+#                              "chrM"))
+# levels(dt1$chr)
 ```
 
 ```{r}
 ?annotatePeak
 ```
 
-
-## Annotate DNA samples
-```{r anoo}
+# Annotate DNA samples
+```{r}
 peakAnno1 <- annotatePeak(peak = "data/combined_def.tsv", 
                           tssRegion = c(-3000, 3000), # default - CHECK!
-                          TxDb = TxDb.Hsapiens.UCSC.hg38.knownGene,
-                          annoDb = "org.Hs.eg.db") # provides the following extra columns:
+                          TxDb = TxDb.Mmusculus.UCSC.mm10.knownGene,
+                          annoDb = "org.Mm.eg.db") # provides the following extra columns:
                                                    # ENSEMBL, SYMBOL, GENENAME
 ```
 
 ## Save annotated data
-```{r save_anno}
+```{r}
 peakAnno1@annoStat
 dt2 <- data.table(as.data.frame(peakAnno1@anno@elementMetadata@listData))
 setkey(dt2)
-dt2 <- dt2[dt2$SYMBOL != "NA", ]
+# dt2 <- dt2[dt2$SYMBOL != "NA", ]
 head(dt2)
 
 length(unique(dt2$SYMBOL))
@@ -90,8 +408,63 @@ unique(substr(x = dt2$annotation,
 
 ## Remove metochondrial DNA
 ```{r}
-unique(dt2$geneChr)
-dt2 <- dt2[geneChr != "chrM", ]
+# unique(dt2$geneChr)
+# dt2 <- dt2[geneChr != "chrM", ]
+```
+
+## Annotated CpGs (merge with p-values later)
+```{r}
+dt_anno <- data.table(chr = dt1$chr,
+                      pos = dt2$geneStart,
+                      end = dt2$geneEnd,
+                      length = dt2$geneLength,
+                      gene = dt2$SYMBOL,
+                      dt2[, c("geneLength",
+                              "geneStrand",
+                              "distanceToTSS",
+                              "CpG",
+                              "annotation",
+                              "geneId",
+                              "transcriptId",
+                              "ENSEMBL",
+                              "GENENAME")])
+head(dt_anno)
+```
+
+```{r}
+peakAnnoM1 <- annotatePeak(peak = "tmp/m1.RData", 
+                          tssRegion = c(-3000, 3000), # default - CHECK!
+                          TxDb = TxDb.Mmusculus.UCSC.mm10.knownGene,
+                          annoDb = "org.Mm.eg.db")
+```
+
+### Merge with annotation
+```{r}
+m1$chr <- as.character(m1$chr)
+m1 <- data.table(m1)
+setkey(m1, 
+       pos,
+       chr)
+unique(m1$chr)
+m1$pos[1:10]
+m1[chr == "chr1" &
+     pos == 3038669, ]
+
+dt_anno$chr <- as.character(dt_anno$chr)
+setkey(dt_anno)
+unique(dt_anno$chr)
+dt_anno$pos[1:10]
+dt_anno[chr == "chr1" &
+     pos == 3038669, ]
+
+
+dt1[chr == "chr1" &
+     start == 3038669, ]
+dtm1 <- merge(dt_anno,
+              m1,
+              by = c("chr",
+                     "pos"))
+head(dtm1)
 ```
 
 # CONTINUE HERE (2/4/2022)!
@@ -263,9 +636,3 @@ rm(dna_dina)
 rm(dt2)
 gc()
 ```
-
-
-```{r}
-
-```
-
