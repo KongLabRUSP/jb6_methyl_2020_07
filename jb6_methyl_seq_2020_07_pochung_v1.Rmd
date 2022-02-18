@@ -283,6 +283,36 @@ write.table(ko_anno,
 ```
 
 ## Visualization of DMRs
+![](media/Structure_of_Eukaryotic_Gene_SMC.jpg)
+### Reload Control data
+```{r}
+ctl <- fread("docs/controls.tsv")
+ctl$reg <- substr(x = ctl$annotation,
+                  start = 1,
+                  stop = 4)
+unique(ctl$reg)
+ctl$reg <- factor(ctl$reg,
+                  levels = c("Dist",
+                             "Prom",
+                             "5' U",
+                             "Exon",
+                             "Intr",
+                             "3' U",
+                             "Down"),
+                  labels = c("Distal Intergenic",
+                             "Promoter (<=3kb)",
+                             "5' Untranslated Region (UTR)",
+                             "Exon",
+                             "Intron",
+                             "3' Untranslated Region (UTR)",
+                             "Downstream (<=300bp)"))
+```
+
+```{r}
+unique(ctl$annotation[ctl$reg == "Dist"])
+```
+
+
 ```{r}
 tmp_l <- list(data.table(chr = dt1$chr,
                          # pos = dt1$start,
